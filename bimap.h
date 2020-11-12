@@ -48,8 +48,8 @@ private:
         static_cast<right_comparator_holder const &>(*this));
   }
 
-  void copy_elements(bimap const &other) noexcept(noexcept(insert(
-      std::declval<left_t const &>(), std::declval<right_t const &>())));
+  void copy_elements(bimap const &other);
+
 public:
   bimap()
       : left_comparator_holder(), right_comparator_holder(), root(nullptr),
@@ -127,11 +127,7 @@ public:
     return right_iterator(&root, nullptr);
   }
 
-  template <typename T1, typename T2>
-  left_iterator
-  insert(T1 &&l,
-         T2 &&r) noexcept(std::is_nothrow_constructible_v<T1, T1 &&>
-                              &&std::is_nothrow_constructible_v<T2, T2 &&>) {
+  template <typename T1, typename T2> left_iterator insert(T1 &&l, T2 &&r) {
     if (root == nullptr) {
       root = new node_t(std::forward<T1>(l), std::forward<T2>(r));
       sz = 1;
@@ -334,11 +330,10 @@ public:
   bool operator!=(bimap const &b) const { return !operator==(b); }
 };
 
-
 template <typename Left, typename Right, typename CompareLeft,
           typename CompareRight>
-void bimap<Left, Right, CompareLeft, CompareRight>::copy_elements(bimap const &other) noexcept(noexcept(insert(
-    std::declval<left_t const &>(), std::declval<right_t const &>()))) {
+void bimap<Left, Right, CompareLeft, CompareRight>::copy_elements(
+    bimap const &other) {
   if (this == &other)
     return;
   clear();
