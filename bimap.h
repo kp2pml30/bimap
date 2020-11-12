@@ -74,6 +74,19 @@ struct bimap
 
 	void clear()
 	{
+		if (size() == 0)
+			return;
+		auto iter = begin_left();
+		while (true)
+		{
+			auto del = iter;
+			++iter;
+			delete del.node;
+			if (iter == end_left())
+				break;
+			assert(iter.node->left_node()->up == nullptr);
+			iter.node->left_node()->left = nullptr;
+		}
 		root = nullptr;
 		sz = 0;
 	}
