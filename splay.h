@@ -245,9 +245,8 @@ namespace splay
 		}
 
 		template<typename C>
-		splay_holder const* find_ge(T const& e) const
+		splay_holder const* find_ge(T const& e, C const& c) const
 		{
-			C c;
 			this->splay();
 			splay_holder const* cur = this;
 			splay_holder const* best = nullptr;

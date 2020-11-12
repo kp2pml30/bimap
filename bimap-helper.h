@@ -105,5 +105,18 @@ namespace bimap_helper {
 			return !operator==(r);
 		}
   };
+
+	// for zero base optimization
+	template<typename T, typename Tag = splay::default_tag_t<T>>
+	struct tagged_comparator : public T
+	{
+		tagged_comparator() = default;
+		tagged_comparator(T const& t) : T(t) {}
+		tagged_comparator(T&& t) : T(std::move(t)) {}
+		explicit operator T const&() const noexcept
+		{
+			return static_cast<T const&>(*this);
+		}
+	};
 }
 

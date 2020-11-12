@@ -12,18 +12,37 @@
 
 template <typename Left, typename Right, typename CompareLeft = std::less<Left>,
           typename CompareRight = std::less<Right>>
-struct bimap {
+struct bimap
+: private bimap_helper::tagged_comparator<CompareLeft>
+, private bimap_helper::tagged_comparator<CompareRight, splay::default_tag2_t<CompareRight>>
+{
   using left_t = Left;
   using right_t = Right;
 
 	using node_t = bimap_helper::node_t<Left, Right>;
+	using left_comparator_holder = bimap_helper::tagged_comparator<CompareLeft>;
+	using right_comparator_holder = bimap_helper::tagged_comparator<CompareRight, splay::default_tag2_t<CompareRight>>;
+
 	using left_iterator = bimap_helper::bimap_iterator<node_t, typename node_t::left_holder>;
 	using right_iterator = bimap_helper::bimap_iterator<node_t, typename node_t::right_holder>;
 
 	node_t const* root;
 	std::size_t sz;
 
-  bimap() noexcept : root(nullptr), sz(0)
+	CompareLeft const& left_comparator() const noexcept
+	{
+		return static_cast<CompareLeft const&>(static_cast<left_comparator_holder const&>(*this));
+	}
+	CompareRight const& right_comparator() const noexcept
+	{
+		return static_cast<CompareRight const&>(static_cast<right_comparator_holder const&>(*this));
+	}
+
+  explicit bimap(CompareLeft&& cl = CompareLeft(), CompareRight&& cr = CompareRight()) noexcept
+	: left_comparator_holder(std::move(cl))
+	, right_comparator_holder(std::move(cr))
+	, root(nullptr)
+	, sz(0)
 	{}
 
   bimap(bimap const &other) : bimap()
@@ -99,10 +118,10 @@ struct bimap {
 			return left_iterator(&root, root);
 		}
 
-		auto fl = root->left_node()->template find_ge<CompareLeft>(l);
-		if (fl != nullptr && !CompareLeft()(l, fl->data))
+		auto fl = root->left_node()->template find_ge<CompareLeft>(l, left_comparator());
+		if (fl != nullptr && !left_comparator()(l, fl->data))
 			return end_left();
-		auto fr = root->right_node()->template find_ge<CompareRight>(r);
+		auto fr = root->right_node()->template find_ge<CompareRight>(r, right_comparator());
 		if (fr != nullptr && !CompareRight()(r, fr->data))
 			return end_left();
 
@@ -187,16 +206,16 @@ struct bimap {
   // Возвращает итератор по элементу. Если не найден - соответствующий end()
   left_iterator find_left(left_t const &left) const
 	{
-		auto found = root->left_node()->template find_ge<CompareLeft>(left);
+		auto found = root->left_node()->find_ge(left, left_comparator());
 		// found >= left
-		if (found != nullptr && CompareLeft()(left, found->data))
+		if (found != nullptr && left_comparator()(left, found->data))
 			return end_left();
 		return left_iterator(&root, node_t::cast(found));
 	}
   right_iterator find_right(right_t const &right) const
 	{
-		auto found = root->right_node()->template find_ge<CompareRight>(right);
-		if (found != nullptr && CompareRight()(right, found->data))
+		auto found = root->right_node()->find_ge(right, right_comparator());
+		if (found != nullptr && right_comparator()(right, found->data))
 			return end_right();
 		return right_iterator(&root, node_t::cast(found));
 	}
@@ -267,15 +286,15 @@ struct bimap {
 	{
 		if (root == nullptr)
 			return end_left();
-		return left_iterator(&root, node_t::cast(root->left_node()->template find_ge<CompareLeft>(left)));
+		return left_iterator(&root, node_t::cast(root->left_node()->find_ge(left, left_comparator())));
 	}
   left_iterator upper_bound_left(const left_t &left) const
 	{
 		if (root == nullptr)
 			return end_left();
-		auto found = root->left_node()->template find_ge<CompareLeft>(left);
+		auto found = root->left_node()->find_ge(left, left_comparator());
 		// found >= left
-		if (found == nullptr || CompareLeft()(left, found->data))
+		if (found == nullptr || left_comparator()(left, found->data))
 			return left_iterator(&root, node_t::cast(found));
 		constexpr auto next = &std::remove_pointer_t<decltype(found)>::node_t::next;
 		return left_iterator(&root, node_t::cast(found->call(next)));
@@ -285,14 +304,14 @@ struct bimap {
 	{
 		if (root == nullptr)
 			return end_right();
-		return right_iterator(&root, node_t::cast(root->right_node()->template find_ge<CompareRight>(right)));
+		return right_iterator(&root, node_t::cast(root->right_node()->find_ge(right, right_comparator())));
 	}
   right_iterator upper_bound_right(const right_t &right) const
 	{
 		if (root == nullptr)
 			return end_right();
-		auto found = root->right_node()->template find_ge<CompareRight>(right);
-		if (found == nullptr || CompareRight()(right, found->data))
+		auto found = root->right_node()->find_ge(right, right_comparator());
+		if (found == nullptr || right_comparator()(right, found->data))
 			return right_iterator(&root, node_t::cast(found));
 		constexpr auto next = &std::remove_pointer_t<decltype(found)>::node_t::next;
 		return right_iterator(&root, node_t::cast(found->call(next)));
@@ -311,8 +330,8 @@ struct bimap {
 	{
 		auto it1 = begin_left();
 		auto it2 = b.begin_left();
-		CompareLeft l;
-		CompareRight r;
+		auto const& l = left_comparator();
+		auto const& r = right_comparator();
 		while (it1 != end_left() && it2 != b.end_left())
 			if (l(*it1, *it2) || l(*it2, *it1) || r(*it1.flip(), *it2.flip()) || r(*it2.flip(), *it1.flip()))
 			{
