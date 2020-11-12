@@ -1,9 +1,13 @@
 #pragma once
 
+#include <type_traits>
 #include <utility>
 #include <cassert>
 
 #include <string>
+
+template<typename T, typename C>
+static constexpr bool is_nothrow_comparable_v = noexcept(std::declval<C>()(std::declval<T const&>(), std::declval<T const&>()));
 
 namespace splay
 {
@@ -12,6 +16,10 @@ namespace splay
 	template<typename T>
 	struct default_tag2_t {};
 
+	/**
+	 * tree holder with splay operation
+	 * said to be const, since every operation over splay is not const under the hood
+	 */
 	template<typename Tag>
 	struct splay_node
 	{
@@ -25,7 +33,7 @@ namespace splay
 		static constexpr splay_node* splay_node::* cogetter_v =  getter ^ &splay_node::left ^ &splay_node::right;
 #else
 		template<splay_node* splay_node::* getter>
-		static constexpr splay_node* splay_node::* cogetter_f()
+		static constexpr splay_node* splay_node::* cogetter_f() noexcept
 		{
 			if constexpr (getter == &splay_node::left)
 				return &splay_node::right;
@@ -38,6 +46,7 @@ namespace splay
 		static constexpr auto cogetter_v = cogetter_f<getter>();
 #endif
 
+	private:
 		template<splay_node* splay_node::* getter>
 		void rotate() const noexcept
 		{
@@ -61,6 +70,7 @@ namespace splay
 			if (auto got = this->*cogetter; got != nullptr)
 				got->up = const_cast<splay_node*>(this);
 		}
+	public:
 		splay_node const* splay() const noexcept
 		{
 			while (up != nullptr)
@@ -148,7 +158,7 @@ namespace splay
 		/**
 		 * cuts as {[0..cur), [cur..end]}
 		 */
-		std::pair<splay_node const*, splay_node const*> cut() const
+		std::pair<splay_node const*, splay_node const*> cut() const noexcept
 		{
 			splay();
 			auto l = left;
@@ -162,7 +172,7 @@ namespace splay
 		/**
 		 * cuts as {[0..cur), cur, (cur..end]}
 		 */
-		std::tuple<splay_node const*, splay_node const*, splay_node const*> cutcut() const
+		std::tuple<splay_node const*, splay_node const*, splay_node const*> cutcut() const noexcept
 		{
 			auto [l, c] = cut();
 			auto r = c->right;
@@ -174,7 +184,7 @@ namespace splay
 			return {l, c, r};
 		}
 		template<splay_node* splay_node::*getter>
-		void merge_side(splay_node const* tree) const
+		void merge_side(splay_node const* tree) const noexcept
 		{
 			if (tree == nullptr)
 				return;
@@ -186,26 +196,29 @@ namespace splay
 				tree->up = const_cast<splay_node*>(cur);
 			splay();
 		}
-		void mergel(splay_node const* tree) const
+		void merge_l(splay_node const* tree) const noexcept
 		{
 			merge_side<&splay_node::left>(tree);
 		}
-		void merger(splay_node const* tree) const
+		void merge_r(splay_node const* tree) const noexcept
 		{
 			merge_side<&splay_node::right>(tree);
 		}
-		void merge(splay_node const* treel, splay_node const* treer) const
+		void merge(splay_node const* treel, splay_node const* treer) const noexcept
 		{
-			mergel(treel);
-			merger(treer);
+			merge_l(treel);
+			merge_r(treer);
 		}
 
-		splay_node const* cutcutmerge() const
+		/**
+		 * cuts detatches current alement from tree
+		 */
+		splay_node const* cutcutmerge() const noexcept
 		{
 			auto [l, cur, r] = cutcut();
 			if (r == nullptr)
 				return l;
-			r->mergel(l);
+			r->merge_l(l);
 			return r;
 		}
 	};
@@ -220,13 +233,15 @@ namespace splay
 		T data;
 
 		explicit splay_holder(T const& data)
+		noexcept(std::is_nothrow_constructible_v<T, T const&>)
 		: data(data)
 		{}
 		explicit splay_holder(T&& data)
+		noexcept(std::is_nothrow_constructible_v<T, T&&>)
 		: data(std::move(data))
 		{}
 
-		constexpr node_t const* as_holder() const noexcept 
+		constexpr node_t const* as_node() const noexcept 
 		{
 			return static_cast<node_t const*>(this);
 		}
@@ -239,13 +254,14 @@ namespace splay
 		}
 
 		template<typename F, typename ...A>
-		splay_holder const* call(F f, A&&... a) const
+		splay_holder const* call(F f, A&&... a) const noexcept
 		{
 			return cast((this->*f)(std::forward<A>(a)...));
 		}
 
 		template<typename C>
 		splay_holder const* find_ge(T const& e, C const& c) const
+		noexcept(is_nothrow_comparable_v<T, C>)
 		{
 			this->splay();
 			splay_holder const* cur = this;
@@ -279,7 +295,11 @@ namespace splay
 			return cast(best->splay());
 		}
 
-		std::string ToMermaid(int& counter, std::string& res) const noexcept
+		/**
+		 * debug functions which ports graph to mermaid
+		 * add `graph TD` line before output
+		 */
+		std::string to_mermaid(int& counter, std::string& res) const noexcept
 		{
 			auto mestr = std::to_string(counter++);
 			if (this == nullptr)
@@ -293,16 +313,6 @@ namespace splay
 			return mestr;
 		}
 	};
-	template<typename C, typename N>
-	N const* get_insert_pos_ge_checked(N const* n, typename N::value_type const& v)
-	{
-		auto res = n->template find_ge<C>(v);
-		C c;
-		// res >= v
-		if (!c(v, res->data))
-			return nullptr;
-		return res;
-	}
 }
 
 

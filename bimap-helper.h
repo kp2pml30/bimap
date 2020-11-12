@@ -1,8 +1,14 @@
 #pragma once
 
 #include <cstddef>
+#include <iterator>
 #include <type_traits>
 #include "splay.h"
+
+template <typename Left, typename Right,
+          typename CompareLeft,
+          typename CompareRight>
+struct bimap;
 
 namespace bimap_helper {
 	template<typename Left, typename Right>
@@ -21,8 +27,6 @@ namespace bimap_helper {
 			                            std::is_same_v<T, right_holder>>>
 		constexpr static node_t const* cast(T const* a) noexcept
 		{
-			if (a == nullptr)
-				return nullptr;
 			return static_cast<node_t const*>(a);
 		}
 
@@ -49,30 +53,45 @@ namespace bimap_helper {
 
 	template<typename node_t, typename storage_type>
   struct bimap_iterator {
-		node_t const*const* root; // binary size optimization : we do not store comparator in template here
+		node_t const*const* root;
 		node_t const* node;
-		bimap_iterator() = default;
-		bimap_iterator(decltype(root) root, node_t const* node) : root(root), node(node) {}
 
-    auto const &operator*() const
+		using value_type = typename storage_type::value_type;
+		using pointer_type = value_type const*;
+		using reference_type = value_type const&;
+		using iterator_category = std::bidirectional_iterator_tag;
+
+		template<typename, typename, typename, typename>
+		friend class bimap;
+
+		bimap_iterator() = default;
+		bimap_iterator(decltype(root) root, node_t const* node) noexcept
+		: root(root), node(node)
+		{}
+
+		pointer_type operator->() const
 		{
-			return node->storage_type::data;
+			return &node->storage_type::data;
+		}
+    reference_type operator*() const noexcept
+		{
+			return *operator->();
 		}
 
-    bimap_iterator &operator++()
+    bimap_iterator &operator++() noexcept
 		{
 			node = node_t::cast(node->storage_type::call(&storage_type::node_t::next));
 
 			return *this;
 		}
-    bimap_iterator operator++(int)
+    bimap_iterator operator++(int) noexcept
 		{
 			auto copy = *this;
 			operator++();
 			return copy;
 		}
 
-    bimap_iterator &operator--()
+    bimap_iterator &operator--() noexcept
 		{
 			if (node == nullptr)
 			{
@@ -84,23 +103,23 @@ namespace bimap_helper {
 
 			return *this;
 		}
-    bimap_iterator operator--(int)
+    bimap_iterator operator--(int) noexcept
 		{
 			auto copy = *this;
 			operator--();
 			return copy;
 		}
 
-    auto flip() const
+    auto flip() const noexcept
 		{
 			return bimap_iterator<node_t, coholder_t<node_t, storage_type>>(root, node);
 		}
 
-		bool operator==(bimap_iterator const& r) const
+		bool operator==(bimap_iterator const& r) const noexcept
 		{
 			return node == r.node;
 		}
-		bool operator!=(bimap_iterator const& r) const
+		bool operator!=(bimap_iterator const& r) const noexcept
 		{
 			return !operator==(r);
 		}
@@ -111,9 +130,18 @@ namespace bimap_helper {
 	struct tagged_comparator : public T
 	{
 		tagged_comparator() = default;
-		tagged_comparator(T const& t) : T(t) {}
-		tagged_comparator(T&& t) : T(std::move(t)) {}
-		explicit operator T const&() const noexcept
+
+		explicit tagged_comparator(T const& t)
+		noexcept(std::is_nothrow_constructible_v<T, T const&>)
+		: T(t)
+		{}
+
+		explicit tagged_comparator(T&& t)
+		noexcept(std::is_nothrow_constructible_v<T, T&&>)
+		: T(std::move(t))
+		{}
+
+		explicit constexpr operator T const&() const noexcept
 		{
 			return static_cast<T const&>(*this);
 		}
