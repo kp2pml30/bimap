@@ -49,16 +49,7 @@ private:
   }
 
   void copy_elements(bimap const &other) noexcept(noexcept(insert(
-      std::declval<left_t const &>(), std::declval<right_t const &>()))) {
-    if (this == &other)
-      return;
-    clear();
-    // iterating over all elements of splay tree is O(n), insert biggest would
-    // be O(1) here + rebalance in fututre
-    for (auto iter = other.begin_left(); iter != other.end_left(); ++iter)
-      insert(*iter, *iter.flip());
-  }
-
+      std::declval<left_t const &>(), std::declval<right_t const &>())));
 public:
   bimap()
       : left_comparator_holder(), right_comparator_holder(), root(nullptr),
@@ -342,3 +333,17 @@ public:
   }
   bool operator!=(bimap const &b) const { return !operator==(b); }
 };
+
+
+template <typename Left, typename Right, typename CompareLeft,
+          typename CompareRight>
+void bimap<Left, Right, CompareLeft, CompareRight>::copy_elements(bimap const &other) noexcept(noexcept(insert(
+    std::declval<left_t const &>(), std::declval<right_t const &>()))) {
+  if (this == &other)
+    return;
+  clear();
+  // iterating over all elements of splay tree is O(n), insert biggest would
+  // be O(1) here + rebalance in fututre
+  for (auto iter = other.begin_left(); iter != other.end_left(); ++iter)
+    insert(*iter, *iter.flip());
+}
