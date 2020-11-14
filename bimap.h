@@ -51,13 +51,8 @@ private:
   void copy_elements(bimap const &other);
 
 public:
-  bimap()
-      : left_comparator_holder(), right_comparator_holder(), root(nullptr),
-        sz(0) {}
-  bimap(CompareLeft const &cl, CompareRight const &cr)
-      : left_comparator_holder(cl), right_comparator_holder(cr), root(nullptr),
-        sz(0) {}
-  bimap(CompareLeft &&cl, CompareRight &&cr) noexcept
+  bimap(CompareLeft cl = CompareLeft(),
+        CompareRight cr = CompareRight()) noexcept
       : left_comparator_holder(std::move(cl)),
         right_comparator_holder(std::move(cr)), root(nullptr), sz(0) {}
 
@@ -127,7 +122,9 @@ public:
     return right_iterator(&root, nullptr);
   }
 
-  template <typename T1, typename T2> left_iterator insert(T1 &&l, T2 &&r) {
+private:
+  template <typename T1, typename T2>
+  left_iterator insert_impl(T1 &&l, T2 &&r) {
     if (root == nullptr) {
       root = new node_t(std::forward<T1>(l), std::forward<T2>(r));
       sz = 1;
@@ -172,6 +169,20 @@ public:
     root = node;
 
     return left_iterator(&root, node);
+  }
+
+public:
+  left_iterator insert(left_t const &a, right_t const &b) {
+    return insert_impl(a, b);
+  }
+  left_iterator insert(left_t const &a, right_t &&b) {
+    return insert_impl(a, std::move(b));
+  }
+  left_iterator insert(left_t &&a, right_t const &b) {
+    return insert_impl(std::move(a), b);
+  }
+  left_iterator insert(left_t &&a, right_t &&b) {
+    return insert_impl(std::move(a), std::move(b));
   }
 
   template <typename holder_t>
@@ -253,21 +264,28 @@ public:
       throw std::out_of_range("at_right bad");
     return *iter.flip();
   }
-  right_t at_left_or_default(left_t const &key) const
-      noexcept(noexcept(find_left(key)) &&
-               std::is_nothrow_default_constructible_v<left_t>) {
-    auto iter = find_left(key);
-    if (iter == end_left())
-      return left_t();
-    return *iter.flip();
+
+  right_t const &at_left_or_default(left_t const &key) {
+    if (auto itl = find_left(key); itl != end_left())
+      return *itl.flip();
+    // we may search as much as we want for same elements
+    // Static Optimality Theorem
+    right_t dflt {};
+    auto itr = find_right(dflt);
+    if (itr != end_right())
+      erase_right(itr);
+    return *insert(key, std::move(dflt)).flip();
   }
-  left_t at_right_or_default(right_t const &key) const
-      noexcept(noexcept(find_right(key)) &&
-               std::is_nothrow_default_constructible_v<right_t>) {
-    auto iter = find_right(key);
-    if (iter == end_right())
-      return right_t();
-    return *iter.flip();
+  left_t const &at_right_or_default(right_t const &key) {
+    if (auto itr = find_right(key); itr != end_right())
+      return *itr.flip();
+    // we may search as much as we want for same elements
+    // Static Optimality Theorem
+    left_t dflt {};
+    auto itr = find_left(dflt);
+    if (itr != end_left())
+      erase_left(itr);
+    return *insert(std::move(dflt), key);
   }
 
   left_iterator lower_bound_left(const left_t &left) const
