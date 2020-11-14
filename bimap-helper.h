@@ -10,11 +10,17 @@ template <typename Left, typename Right, typename CompareLeft,
 struct bimap;
 
 namespace bimap_helper {
+// reduce count of generated templates
+template <typename Left, typename Right>
+using second_tag = std::conditional_t<std::is_same_v<Left, Right>,
+                                      splay::default_tag2_t<Right>,
+                                      splay::default_tag_t<Right>>;
+
 template <typename Left, typename Right>
 struct node_t : splay::splay_holder<Left>,
-                splay::splay_holder<Right, splay::default_tag2_t<Right>> {
+                splay::splay_holder<Right, second_tag<Left, Right>> {
   using left_holder = splay::splay_holder<Left>;
-  using right_holder = splay::splay_holder<Right, splay::default_tag2_t<Right>>;
+  using right_holder = splay::splay_holder<Right, second_tag<Left, Right>>;
 
   using left_t = Left;
   using right_t = Right;
@@ -44,15 +50,17 @@ using coholder_t = std::conditional_t<
     typename node_t::right_holder, typename node_t::left_holder>;
 
 template <typename node_t, typename storage_type> struct bimap_iterator {
+private:
   node_t const *const *root;
   node_t const *node;
 
+public:
   using value_type = typename storage_type::value_type;
   using pointer_type = value_type const *;
   using reference_type = value_type const &;
   using iterator_category = std::bidirectional_iterator_tag;
 
-  template <typename, typename, typename, typename> friend class bimap;
+  template <typename, typename, typename, typename> friend struct ::bimap;
 
   bimap_iterator() = default;
   bimap_iterator(decltype(root) root, node_t const *node) noexcept

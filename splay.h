@@ -186,9 +186,9 @@ public:
 };
 
 template <typename T, typename Tag = default_tag_t<T>>
-class splay_holder : public splay_node<Tag> {
+class splay_holder : public splay_node<void> {
 public:
-  using node_t = splay_node<Tag>;
+  using node_t = splay_node<void>;
   using value_type = T;
 
   T data;
@@ -204,7 +204,7 @@ public:
     return static_cast<node_t const *>(this);
   }
 
-  static splay_holder const *cast(splay_node<Tag> const *from) noexcept {
+  static splay_holder const *cast(node_t const *from) noexcept {
     if (from == nullptr)
       return nullptr;
     return static_cast<splay_holder const *>(from);

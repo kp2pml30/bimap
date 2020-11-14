@@ -16,18 +16,18 @@
  */
 template <typename Left, typename Right, typename CompareLeft = std::less<Left>,
           typename CompareRight = std::less<Right>>
-struct bimap : private bimap_helper::tagged_comparator<CompareLeft>,
-               private bimap_helper::tagged_comparator<
-                   CompareRight, splay::default_tag2_t<CompareRight>> {
+struct bimap
+    : private bimap_helper::tagged_comparator<CompareLeft>,
+      private bimap_helper::tagged_comparator<
+          CompareRight, bimap_helper::second_tag<CompareLeft, CompareRight>> {
   using left_t = Left;
   using right_t = Right;
 
 private:
   using node_t = bimap_helper::node_t<Left, Right>;
   using left_comparator_holder = bimap_helper::tagged_comparator<CompareLeft>;
-  using right_comparator_holder =
-      bimap_helper::tagged_comparator<CompareRight,
-                                      splay::default_tag2_t<CompareRight>>;
+  using right_comparator_holder = bimap_helper::tagged_comparator<
+      CompareRight, bimap_helper::second_tag<CompareLeft, CompareRight>>;
 
 public:
   using left_iterator =
@@ -270,7 +270,7 @@ public:
       return *itl.flip();
     // we may search as much as we want for same elements
     // Static Optimality Theorem
-    right_t dflt {};
+    right_t dflt{};
     auto itr = find_right(dflt);
     if (itr != end_right())
       erase_right(itr);
@@ -281,7 +281,7 @@ public:
       return *itr.flip();
     // we may search as much as we want for same elements
     // Static Optimality Theorem
-    left_t dflt {};
+    left_t dflt{};
     auto itr = find_left(dflt);
     if (itr != end_left())
       erase_left(itr);
