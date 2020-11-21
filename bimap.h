@@ -314,8 +314,10 @@ public:
   }
 
   // this two functions are unmergable b/c of oreder of arguments of insert
-  right_t const &at_left_or_default(left_t const &key) {
-    static_assert(std::is_default_constructible_v<right_t>);
+  template <typename T, typename = std::enable_if_t<
+                            std::is_same_v<T, left_t> &&
+                            std::is_default_constructible_v<right_t>>>
+  right_t const &at_left_or_default(T const &key) {
     if (auto itl = find_left(key); itl != end_left())
       return *itl.flip();
     // we may search as much as we want for same elements
@@ -326,8 +328,10 @@ public:
       erase_right(itr);
     return *insert(key, std::move(dflt)).flip();
   }
-  left_t const &at_right_or_default(right_t const &key) {
-    static_assert(std::is_default_constructible_v<left_t>);
+  template <typename T, typename = std::enable_if_t<
+                            std::is_same_v<T, right_t> &&
+                            std::is_default_constructible_v<left_t>>>
+  left_t const &at_right_or_default(T const &key) {
     if (auto itr = find_right(key); itr != end_right())
       return *itr.flip();
     // we may search as much as we want for same elements
