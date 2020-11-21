@@ -236,6 +236,8 @@ private:
       noexcept(
           is_nothrow_comparable_v<typename T::value_type, comparator_t<T>>) {
     using ret_t = iterator_from_node_type<T>;
+    if (root == nullptr)
+      return ret_t(&root, nullptr);
     auto found =
         root->template get_node<T>()->find_ge(wht, get_comparator<T>());
     // found >= wht
@@ -313,6 +315,7 @@ public:
 
   // this two functions are unmergable b/c of oreder of arguments of insert
   right_t const &at_left_or_default(left_t const &key) {
+    static_assert(std::is_default_constructible_v<right_t>);
     if (auto itl = find_left(key); itl != end_left())
       return *itl.flip();
     // we may search as much as we want for same elements
@@ -324,6 +327,7 @@ public:
     return *insert(key, std::move(dflt)).flip();
   }
   left_t const &at_right_or_default(right_t const &key) {
+    static_assert(std::is_default_constructible_v<left_t>);
     if (auto itr = find_right(key); itr != end_right())
       return *itr.flip();
     // we may search as much as we want for same elements
