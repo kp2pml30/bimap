@@ -11,9 +11,6 @@
 #include "bimap-helper.h"
 #include "splay.h"
 
-/**
- * allocation exception is treated as noexcept
- */
 template <typename Left, typename Right, typename CompareLeft = std::less<Left>,
           typename CompareRight = std::less<Right>>
 struct bimap
@@ -29,13 +26,18 @@ private:
   using right_comparator_holder = bimap_helper::tagged_comparator<
       CompareRight, bimap_helper::second_tag<CompareLeft, CompareRight>>;
 
+  template <typename T>
+  using iterator_from_node_type = bimap_helper::bimap_iterator<node_t, T>;
+
 public:
-  using left_iterator =
-      bimap_helper::bimap_iterator<node_t, typename node_t::left_holder>;
-  using right_iterator =
-      bimap_helper::bimap_iterator<node_t, typename node_t::right_holder>;
+  using left_iterator = iterator_from_node_type<typename node_t::left_holder>;
+  using right_iterator = iterator_from_node_type<typename node_t::right_holder>;
 
 private:
+  template <typename T>
+  using co_iterator = std::conditional_t<std::is_same_v<left_iterator, T>,
+                                         right_iterator, left_iterator>;
+
   node_t const *root;
   std::size_t sz;
 
@@ -48,11 +50,33 @@ private:
         static_cast<right_comparator_holder const &>(*this));
   }
 
+  template <typename T>
+  using comparator_t =
+      std::conditional_t<std::is_same_v<typename node_t::left_holder, T>,
+                         CompareLeft, CompareRight>;
+
+  template <typename T> comparator_t<T> const &get_comparator() const noexcept {
+    if constexpr (std::is_same_v<T, typename node_t::left_holder>)
+      return left_comparator();
+    else if constexpr (std::is_same_v<T, typename node_t::right_holder>)
+      return right_comparator();
+    else
+      return ""; // generate error
+  }
+
   void copy_elements(bimap const &other);
 
 public:
+  // it is not me! it is clang format!
   bimap(CompareLeft cl = CompareLeft(),
-        CompareRight cr = CompareRight()) noexcept
+        CompareRight cr =
+            CompareRight()) noexcept(std::
+                                         is_nothrow_constructible_v<
+                                             left_comparator_holder,
+                                             CompareLeft &&>
+                                             &&std::is_nothrow_constructible_v<
+                                                 right_comparator_holder,
+                                                 CompareRight &&>)
       : left_comparator_holder(std::move(cl)),
         right_comparator_holder(std::move(cr)), root(nullptr), sz(0) {}
 
@@ -65,8 +89,7 @@ public:
     other.sz = 0;
   }
 
-  bimap &
-  operator=(bimap const &other) noexcept(noexcept(copy_elements(other))) {
+  bimap &operator=(bimap const &other) {
     copy_elements(other);
     return *this;
   }
@@ -96,27 +119,26 @@ public:
   }
   ~bimap() noexcept { clear(); }
 
-  left_iterator begin_left() const noexcept {
+private:
+  template <typename T> iterator_from_node_type<T> begin_impl() const noexcept {
+    using ret_t = iterator_from_node_type<T>;
     if (root == nullptr)
-      return left_iterator(&root, nullptr);
-    auto rt = root->left_node();
+      return ret_t(&root, nullptr);
+    auto rt = root->template get_node<T>();
     rt->splay();
-    return left_iterator(
-        &root, node_t::cast(
-                   rt->call(&std::remove_pointer_t<decltype(rt)>::left_most)));
+    return ret_t(&root, node_t::cast(rt->call(&T::node_t::left_most)));
+  }
+
+public:
+  left_iterator begin_left() const noexcept {
+    return begin_impl<typename node_t::left_holder>();
   }
   left_iterator end_left() const noexcept {
     return left_iterator(&root, nullptr);
   }
 
   right_iterator begin_right() const noexcept {
-    if (root == nullptr)
-      return right_iterator(&root, nullptr);
-    auto rt = root->right_node();
-    rt->splay();
-    return right_iterator(
-        &root, node_t::cast(
-                   rt->call(&std::remove_pointer_t<decltype(rt)>::left_most)));
+    return begin_impl<typename node_t::right_holder>();
   }
   right_iterator end_right() const noexcept {
     return right_iterator(&root, nullptr);
@@ -139,11 +161,12 @@ private:
       return end_left();
 
     auto node = new node_t(std::forward<T1>(l), std::forward<T2>(r));
+    // noexcept opertions:
 
     sz++;
 
-    typename node_t::left_holder::node_t const *mll;
-    decltype(mll) mrl;
+    // My [Left/Right] of Left subtree
+    const typename node_t::left_holder::node_t *mll, *mrl;
     if (fl == nullptr) {
       mll = root->left_node()->as_node();
       mrl = nullptr;
@@ -153,8 +176,8 @@ private:
       mrl = res.second;
     }
 
-    typename node_t::right_holder::node_t const *mlr;
-    decltype(mlr) mrr;
+    // My [Left/Right] of Right subtree
+    const typename node_t::right_holder::node_t *mlr, *mrr;
     if (fr == nullptr) {
       mlr = root->right_node()->as_node();
       mrr = nullptr;
@@ -185,6 +208,7 @@ public:
     return insert_impl(std::move(a), std::move(b));
   }
 
+private:
   template <typename holder_t>
   auto erase_impl(bimap_helper::bimap_iterator<node_t, holder_t> it) noexcept
       -> decltype(it) {
@@ -200,42 +224,59 @@ public:
     return ret;
   }
 
+public:
   left_iterator erase_left(left_iterator it) noexcept { return erase_impl(it); }
   right_iterator erase_right(right_iterator it) noexcept {
     return erase_impl(it);
   }
 
+private:
+  template <typename T>
+  iterator_from_node_type<T> find_impl(typename T::value_type const &wht) const
+      noexcept(
+          is_nothrow_comparable_v<typename T::value_type, comparator_t<T>>) {
+    using ret_t = iterator_from_node_type<T>;
+    auto found =
+        root->template get_node<T>()->find_ge(wht, get_comparator<T>());
+    // found >= wht
+    if (found != nullptr && get_comparator<T>()(wht, found->data))
+      return ret_t(&root, nullptr);
+    return ret_t(&root, node_t::cast(found));
+  }
+
+public:
   left_iterator find_left(left_t const &left) const
-      noexcept(is_nothrow_comparable_v<left_t, CompareLeft>) {
-    auto found = root->left_node()->find_ge(left, left_comparator());
-    // found >= left
-    if (found != nullptr && left_comparator()(left, found->data))
-      return end_left();
-    return left_iterator(&root, node_t::cast(found));
+      noexcept(noexcept(find_impl<typename node_t::left_holder>(left))) {
+    return find_impl<typename node_t::left_holder>(left);
   }
   right_iterator find_right(right_t const &right) const
-      noexcept(is_nothrow_comparable_v<right_t, CompareRight>) {
-    auto found = root->right_node()->find_ge(right, right_comparator());
-    if (found != nullptr && right_comparator()(right, found->data))
-      return end_right();
-    return right_iterator(&root, node_t::cast(found));
+      noexcept(noexcept(find_impl<typename node_t::right_holder>(right))) {
+    return find_impl<typename node_t::right_holder>(right);
   }
 
-  bool erase_left(left_t const &left) noexcept(noexcept(find_left(left))) {
-    auto found = find_left(left);
-    if (found == end_left())
+private:
+  template <typename T>
+  bool erase_impl(typename T::value_type const &wht) noexcept(
+      noexcept(find_impl<T>(wht))) {
+    auto found = find_impl<T>(wht);
+    // end check
+    if (found.node == nullptr)
       return false;
-    erase_left(found);
-    return true;
-  }
-  bool erase_right(right_t const &right) noexcept(noexcept(find_right(right))) {
-    auto found = find_right(right);
-    if (found == end_right())
-      return false;
-    erase_right(found);
+    erase_impl(found);
     return true;
   }
 
+public:
+  bool erase_left(left_t const &left) noexcept(
+      noexcept(erase_impl<typename node_t::left_holder>(left))) {
+    return erase_impl<typename node_t::left_holder>(left);
+  }
+  bool erase_right(right_t const &right) noexcept(
+      noexcept(erase_impl<typename node_t::right_holder>(right))) {
+    return erase_impl<typename node_t::right_holder>(right);
+  }
+
+private:
   template <typename T> T erase_range(T f, T l) noexcept {
     // optimize?
     // because of dynamic finger theroem it is not so bad as it is
@@ -243,6 +284,8 @@ public:
       f = erase_impl(f);
     return f;
   }
+
+public:
   left_iterator erase_left(left_iterator f, left_iterator l) noexcept {
     return erase_range(f, l);
   }
@@ -250,21 +293,25 @@ public:
     return erase_range(f, l);
   }
 
-  right_t const &at_left(left_t const &key) const
-      noexcept(noexcept(find_left(key))) {
-    auto iter = find_left(key);
-    if (iter == end_left())
+private:
+  template <typename T>
+  auto const &at_impl(typename T::value_type const &key) const {
+    auto iter = find_impl<T>(key);
+    // end check
+    if (iter.node == nullptr)
       throw std::out_of_range("at_left bad");
     return *iter.flip();
   }
-  left_t const &at_right(right_t const &key) const
-      noexcept(noexcept(find_right(key))) {
-    auto iter = find_right(key);
-    if (iter == end_right())
-      throw std::out_of_range("at_right bad");
-    return *iter.flip();
+
+public:
+  right_t const &at_left(left_t const &key) const {
+    return at_impl<typename node_t::left_holder>(key);
+  }
+  left_t const &at_right(right_t const &key) const {
+    return at_impl<typename node_t::right_holder>(key);
   }
 
+  // this two functions are unmergable b/c of oreder of arguments of insert
   right_t const &at_left_or_default(left_t const &key) {
     if (auto itl = find_left(key); itl != end_left())
       return *itl.flip();
@@ -288,45 +335,55 @@ public:
     return *insert(std::move(dflt), key);
   }
 
-  left_iterator lower_bound_left(const left_t &left) const
-      noexcept(noexcept(root->left_node()->find_ge(left, left_comparator()))) {
+private:
+  template <typename T>
+  iterator_from_node_type<T>
+  lower_bound_impl(typename T::value_type const &key) const noexcept(noexcept(
+      root->template get_node<T>()->find_ge(key, get_comparator<T>()))) {
+    using ret_t = iterator_from_node_type<T>;
     if (root == nullptr)
-      return end_left();
-    return left_iterator(&root, node_t::cast(root->left_node()->find_ge(
-                                    left, left_comparator())));
+      return ret_t(&root, nullptr);
+    return ret_t(&root, node_t::cast(root->template get_node<T>()->find_ge(
+                            key, get_comparator<T>())));
   }
-  left_iterator upper_bound_left(const left_t &left) const
-      noexcept(noexcept(lower_bound_left(left))) {
-    auto it = lower_bound_left(left);
-    if (it == end_left())
+
+public:
+  left_iterator lower_bound_left(const left_t &left) const
+      noexcept(noexcept(lower_bound_impl<typename node_t::left_holder>(left))) {
+    return lower_bound_impl<typename node_t::left_holder>(left);
+  }
+  right_iterator lower_bound_right(const right_t &right) const noexcept(
+      noexcept(lower_bound_impl<typename node_t::right_holder>(right))) {
+    return lower_bound_impl<typename node_t::right_holder>(right);
+  }
+
+private:
+  template <typename T>
+  iterator_from_node_type<T>
+  upper_bound_impl(typename T::value_type const &key) const
+      noexcept(noexcept(lower_bound_impl<T>(key))) {
+    auto it = lower_bound_impl<T>(key);
+    // end check
+    if (it.node == nullptr)
       return it;
     // *it >= left
-    if (!left_comparator()(left, *it))
+    if (!get_comparator<T>()(key, *it))
       ++it;
     return it;
   }
 
-  right_iterator lower_bound_right(const right_t &right) const
-      noexcept(noexcept(root->right_node()->find_ge(right,
-                                                    right_comparator()))) {
-    if (root == nullptr)
-      return end_right();
-    return right_iterator(&root, node_t::cast(root->right_node()->find_ge(
-                                     right, right_comparator())));
+public:
+  left_iterator upper_bound_left(const left_t &left) const
+      noexcept(noexcept(lower_bound_left(left))) {
+    return upper_bound_impl<typename node_t::left_holder>(left);
   }
   right_iterator upper_bound_right(const right_t &right) const
       noexcept(noexcept(lower_bound_right(right))) {
-    auto it = lower_bound_right(right);
-    if (it == end_right())
-      return it;
-    // *it >= left
-    if (!right_comparator()(right, *it))
-      ++it;
-    return it;
+    return upper_bound_impl<typename node_t::right_holder>(right);
   }
 
-  [[nodiscard]] bool empty() const noexcept { return size() == 0; }
-  [[nodiscard]] std::size_t size() const noexcept { return sz; }
+  bool empty() const noexcept { return size() == 0; }
+  std::size_t size() const noexcept { return sz; }
 
   bool operator==(bimap const &b) const {
     auto it1 = begin_left();
@@ -334,8 +391,8 @@ public:
     auto const &l = left_comparator();
     auto const &r = right_comparator();
     while (it1 != end_left() && it2 != b.end_left())
-      if (l(*it1, *it2) || l(*it2, *it1) || r(*it1.flip(), *it2.flip()) ||
-          r(*it2.flip(), *it1.flip())) {
+      if (bimap_helper::NotEqual(l, *it1, *it2) ||
+          bimap_helper::NotEqual(r, *it1.flip(), *it2.flip())) {
         return false;
       } else {
         ++it1;

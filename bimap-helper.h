@@ -10,6 +10,17 @@ template <typename Left, typename Right, typename CompareLeft,
 struct bimap;
 
 namespace bimap_helper {
+
+template <typename T, typename T1, typename... A>
+static constexpr bool is_one_of_v = []() {
+  if constexpr (std::is_same_v<T, T1>)
+    return true;
+  else if constexpr (sizeof...(A) != 0)
+    return is_one_of_v<T, A...>;
+  else
+    return false;
+}();
+
 // reduce count of generated templates
 template <typename Left, typename Right>
 using second_tag = std::conditional_t<std::is_same_v<Left, Right>,
@@ -36,11 +47,17 @@ struct node_t : splay::splay_holder<Left>,
   node_t(T1 &&l, T2 &&r)
       : left_holder(std::forward<T1>(l)), right_holder(std::forward<T2>(r)) {}
 
-  left_holder const *left_node() const {
-    return static_cast<left_holder const *>(this);
+  template <typename T, typename = std::enable_if_t<
+                            is_one_of_v<T, left_holder, right_holder>>>
+  T const *get_node() const noexcept {
+    return static_cast<T const *>(this);
   }
-  right_holder const *right_node() const {
-    return static_cast<right_holder const *>(this);
+
+  left_holder const *left_node() const noexcept {
+    return get_node<left_holder>();
+  }
+  right_holder const *right_node() const noexcept {
+    return get_node<right_holder>();
   }
 };
 
@@ -49,8 +66,11 @@ using coholder_t = std::conditional_t<
     std::is_same_v<storage_type, typename node_t::left_holder>,
     typename node_t::right_holder, typename node_t::left_holder>;
 
-template <typename node_t, typename storage_type> struct bimap_iterator {
+template <typename Node, typename StorageType> struct bimap_iterator {
 private:
+  using node_t = Node;
+  using storage_type = StorageType;
+
   node_t const *const *root;
   node_t const *node;
 
@@ -125,4 +145,9 @@ struct tagged_comparator : public T {
     return static_cast<T const &>(*this);
   }
 };
+
+template <typename C, typename T>
+bool NotEqual(C const &c, T const &l, T const &r) {
+  return c(l, r) || c(r, l);
+}
 } // namespace bimap_helper
